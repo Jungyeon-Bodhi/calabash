@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Sep  3 09:07:52 2024
-
 @author: Bodhi Global Analysis (Jungyeon Lee)
 """
 
@@ -21,8 +19,7 @@ from openpyxl import load_workbook
 
 class Preprocessing:
     
-    def __init__(self, name, file_path, file_path_others, list_del_cols, dates, miss_col, anon_col, anon_col2, identifiers, opened_cols, cols_new, 
-                 age_col = None, diss_cols = None, del_type = 0, file_type='xlsx'):
+    def __init__(self, name, file_path, file_path_others, list_del_cols, dates, miss_col, identifiers, cols_new, del_type = 0, file_type='xlsx'):
         """
         - Initialise the Performance Management Framework class
 
@@ -32,13 +29,8 @@ class Preprocessing:
         list_del_cols: list, Columns list for deleting
         dates: list, Dates on which the pilot test was conducted from the data
         miss_col: list, 
-        anon_col: str, Column for anonymisation (Respondent Name)
-        anon_col2: str, Column for anonymisation (Enumerator Name)
         identifiers: list, Columns for checking duplicates 
-        opened_cols: list, Opened-end question columns
         cols_new: list, New names for the columns (for data analysis purpose)
-        age_col: str, Column of age infromation (for age-grouping purpose)
-        diss_cols: list, Column of WG-SS questions in the dataset (for disability-grouping purpose)
         del_type: int, [0 or 1]
         -> 0: Remove all missing values from the columns where missing values are detected
         -> 1: First, remove columns where missing values make up 10% or more of the total data points
@@ -52,13 +44,8 @@ class Preprocessing:
         self.list_del_cols = list_del_cols
         self.dates = dates
         self.miss_col = miss_col
-        self.anon_col = anon_col
-        self.anon_col2 = anon_col2
         self.identifiers = identifiers
-        self.opened_cols = opened_cols
         self.cols_new = cols_new
-        self.age_col = age_col
-        self.diss_cols = diss_cols
         self.del_type = del_type
         self.df = None
     
@@ -139,6 +126,28 @@ class Preprocessing:
         self.df = df_cleaned
         return True
     
+    def dataset_wrangling(self):
+        df = self.df
+        
+        df['5. What types of disabilities are you aware of?\n(select more than one if applicable)'] = (df['5. What types of disabilities are you aware of?\n(select more than one if applicable)'].fillna('').apply(lambda x: ','.join(sorted(set(i.strip() for i in x.split(',') if i.strip())))))
+        dummies2 = df['5. What types of disabilities are you aware of?\n(select more than one if applicable)'].str.get_dummies(sep=',')
+        dummies2.columns = [f"Q5_{col}" for col in dummies2.columns]
+        df = pd.concat([df, dummies2], axis=1)
+        
+        df['8. Check the box if you agree with the statements'] = (df['8. Check the box if you agree with the statements'].fillna('').apply(lambda x: ','.join(sorted(set(i.strip() for i in x.split(',') if i.strip())))))
+        dummies1 = df['8. Check the box if you agree with the statements'].str.get_dummies(sep=',')
+        dummies1.columns = [f"Q8_{col}" for col in dummies1.columns]
+        df = pd.concat([df, dummies1], axis=1)
+        
+        knowledge_map = {1: 'No knowledge', 2: 'Minimal knowledge', 3: 'Basic knowledge', 4: 'Adequate knowledge', 5: 'Excellent knowledge'}
+        df['7. How would you rate your level of knowledge about government policies or strategies such as the Persons with Disabilities Act?'] = \
+            df['7. How would you rate your level of knowledge about government policies or strategies such as the Persons with Disabilities Act?'].map(knowledge_map)
+
+        df['4. How would you rate your level of knowledge about disabilities?'] = \
+            df['4. How would you rate your level of knowledge about disabilities?'].map(knowledge_map)
+        self.df = df
+        return True
+    
     def save_data(self):
         """
         - To save the new dataframe
@@ -176,30 +185,6 @@ class Preprocessing:
         else: 
             print("Please use 'xlsx' or 'csv' file")
             return False
-        
-    def data_anonymisation(self):
-        """
-        - To implement a dataframe anonymisation
-        """
-        df = self.df
-        col1 = self.anon_col
-        col2 = self.anon_col2
-        file_path = self.file_path
-    
-        def generate_unique_strings(prefix, series):
-            unique_values = series.unique()
-            key_mapping = {value: f"{prefix}{uuid.uuid4()}" for value in unique_values}
-            return series.map(key_mapping), key_mapping
-    
-        df[col1], respondent_mapping = generate_unique_strings('respondent_', df[col1])
-        df[col2], respondent_mapping = generate_unique_strings('enumerator_', df[col2])
-        original = self.file_path
-        self.file_path = f'{file_path}_anonymised'
-        self.save_data()
-        self.file_path = original
-        self.df = df
-        print("The respondent name has been anonymised")
-        return True
     
     def duplicates(self):
         """
@@ -220,34 +205,6 @@ class Preprocessing:
         print(f"Number of data points: {len(df_cleaned)} | After removing duplicates")
         print("")
         self.df = df_cleaned
-        return True
-
-    def open_ended_cols(self):
-        """
-        - To save opened-ended columns and remove these from the dataset
-        """
-        df = self.df
-        cols = self.opened_cols
-        file_path = self.file_path_others
-        empty_df = pd.DataFrame()
-        with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-            empty_df.to_excel(writer, sheet_name='basic', index=False)
-        
-            max_length = 0
-            unique_data = {}
-
-            for col in cols:
-                unique_values = df[col].dropna().unique()
-                unique_data[col] = unique_values
-                max_length = max(max_length, len(unique_values))
-        
-            combined_df = pd.DataFrame({col: pd.Series(unique_data[col]) for col in cols})
-            combined_df.to_excel(writer, sheet_name='open_ended', index=False)
-        
-        print(f"Open-ended columns have been saved to '{file_path}': {cols} ")
-        df = df.drop(columns=cols)
-        print(f'Number of columns: {len(df.columns)} | After removing the open-ended columns')
-        self.df = df
         return True
 
     def columns_redefine(self):
@@ -280,138 +237,28 @@ class Preprocessing:
         self.df = df
         return True
 
-    def age_group(self):
-        """
-        - To create new age group variable
-        """
-        df = self.df
-        col = self.age_col
-        bins = [0, 17, 24, 34, 44, 54, 64, float('inf')]
-        labels = ['Below 18','18 - 24','25 - 34', '35 - 44', '45 - 54', '55 - 64', 'Above 65 years']
-        df[col] = df[col].astype(int)
-        df['Age Group'] = pd.cut(df[col], bins=bins, labels=labels, right=True)
-        print('New age group variable (Age Group) has been created in this dataset')
-        self.df = df
-        return True
-    
-    def disability_wgss(self):
-        """
-        - To create disability group (based on the WG-SS)
-        """
-        df = self.df
-        cols = self.diss_cols
-        try:
-            df['WG-Disability'] = ''
-            
-            def wg_ss(row, cols):
-                values = row[cols]
-                some_difficulty_count = (values == 'Some difficulty').sum()
-                a_lot_of_difficulty = (values == 'A lot of difficulty').any() or (values == 'Cannot do at all').any()
-                cannot_do_at_all = (values == 'Cannot do at all').any()
-                if cannot_do_at_all:
-                    return 'DISABILITY4'
-                elif a_lot_of_difficulty:
-                    return 'DISABILITY3'
-                elif some_difficulty_count >= 2:
-                    return 'DISABILITY2'
-                elif some_difficulty_count >= 1:
-                    return 'DISABILITY1'
-                else:
-                    return 'No_disability'
-            df['WG-Disability'] = df.apply(lambda row: wg_ss(row, cols), axis=1)
-            df['Disability'] = df['WG-Disability'].apply(lambda x: 'Disability' if x in ['DISABILITY4', 'DISABILITY3'] else 'No Disability')
-            print('New disability variable (Disability) has been created in this dataset (Based on WG-SS)')
-            self.df = df
-            return True
-        except Exception as e:
-               print('New disability variable has not been created in this dataset')
-
-    def grouping(self):
-        
-        project_map = {"(1) CBM - Turkana Inclusive Livelihood and Resilience Program":"1",
-                       "(2) Save the Children - Improving nutrition security and resilience of drought affected communities through disaster risk reduction and economic recovery":"2",
-                       "(3) Swissaid - Strengthening vulnerable Community Seed Banks for emergency preparedness, response and recovery":"3",
-                       "(4) VSF-Suisse - Emergency Food Security and Livelihoods Support for Vulnerable Drought Affected Pastoralists in Samburu and Isiolo Counties (EFSLS)":"4",
-                       "(5) Caritas - Immediate Recovery of Drought Affected Communities":"5",
-                       "(6) Helvetas - Emergency and Recovery for Women Pastoralists in Borana (ERWOP - Borana), Oromia Region, Ethiopia":"6",
-                       "(7) VSF-Suisse - Borana Drought Response (BDR) Project":"7",
-                       "(8) VSF-Suisse - Emergency Response for Flood-Affected Communities":"8",
-                       "(9) VSF-Suisse - Emergency Lifesaving and Livelihoods Protection Project":"9",
-                       "(10) VSF-Suisse - Emergency Lifesaving and Livelihood Support to Vulnerable IDPs and Host Communities Affected by Floods":"10"}
-        df = self.df
-        df['E3'] = df[['E3-1', 'E3-2', 'E3-3']].bfill(axis=1).iloc[:, 0]
-        df['4'] = df[['4-1', '4-2', '4-3']].bfill(axis=1).iloc[:, 0]
-        df['5'] = df[['5-1', '5-2', '5-3']].bfill(axis=1).iloc[:, 0]
-        df["E2"] = df[["E2-1",
-                       "E2-2",
-                       "E2-3",
-                       "E2-4",
-                       "E2-5",
-                       "E2-6",
-                       "E2-7",
-                       "E2-8",
-                       "E2-9",
-                       "E2-11"]].bfill(axis=1).iloc[:, 0]
-        df['project'] = df['4'].map(project_map)
-        self.df = df
-        
-    def scoring_fir(self):
-        """
-        - To calculate
-        """
-        df = self.df
-        score_map1 = {'67': 2, '68': 3, '69': 4, '70': 4, "71":1,
-                      '72': 1, "73":0.5,'74': 0.5}
-        try:
-            df['FCS'] = pd.NA
-            
-            def scoring1(row):
-                score = 0
-                score = sum(row[col] * score_map1[col] for col in score_map1)
-                return score
-    
-            
-            df['FCS'] = df.apply(scoring1, axis=1)
-            bins = [0, 21, 35, 120]
-            labels = ["Poor food consumption", "Borderline food consumption", "Acceptable food consumption"]
-            df['FCS_group'] = pd.cut(df['FCS'], bins=bins, labels=labels, right=False)
-            print('FCS Index has been created in this dataset')
-            self.df = df
-            return True
-        except Exception as e:
-               print('New variables has not been created in this dataset')
-        
     def processing(self):
         """
         - To conduct data pre-processing
         1. Load the raw dataset
         2. Re-define variable names
         3. Handle duplicates
-        4. Anonymise data (Respondents' names)
-        5. Remove pilot test data points
-        6. Drop unnecessary columns
-        7. Handle missing values
-        8. Extract answers from open-ended questions
-        9. Create age and disability groups
-        10. Save the cleaned dataset
+        4. Remove pilot test data points
+        5. Drop unnecessary columns
+        6. Handle missing values
+        7. Extract answers from open-ended questions
+        8. Save the cleaned dataset
         """
         self.data_load()
+        self.dataset_wrangling()
         self.columns_redefine()
         print(f'Initial data points: {len(self.df)}')
         self.duplicates()
-        self.grouping()
-        self.data_anonymisation()
         if len(self.dates) != 0:
             self.date_filter()
         print(f'Initial number of columns: {len(self.df.columns)}')
         self.delete_columns()
         self.missing_value_clean()
-        self.open_ended_cols()
-        if self.age_col != None:
-            self.age_group()
-        if self.diss_cols != None:
-            self.disability_wgss()
-        self.scoring_fir()
         original = self.file_path
         self.file_path = f'{self.file_path}_cleaned'
         self.save_data()
