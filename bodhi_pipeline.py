@@ -17,8 +17,7 @@ df = pd.read_excel('data/24-UNICEF-GM-1 - Clean_Dataset.xlsx')
 # Create indicators and provide additional details as needed (Evaluation)
 def statistics(df, indicators):
     age_group = bd.Indicator(df, "Age Group", 0, ['Q1_age'], i_cal=None, i_type='count', description='Age Group Distribution', period='endline', target = None, visual = False)
-    age_group.add_var_order(["0 - 14 years old",
-                             "15 - 19 years old",
+    age_group.add_var_order(["15 - 19 years old",
                              "20 - 24 years old",
                              "25 - 30 years old",
                              "31 - 34 years old",
